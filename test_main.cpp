@@ -135,34 +135,6 @@ void placeGoldsOnMap(mapboard * mbp, int goldCount){
   return;
 }
 
-/*
-int placeIncrementPlayerOnMapPrev(mapboard * mbp,int & thisPlayerLoc){
-  int thisPlayer = -1;
-
-    if(!(mbp->playing & G_PLR0) ){
-      mbp->playing |= G_PLR0;
-      thisPlayer = G_PLR0;
-    }
-    else if(!(mbp->playing & G_PLR1) ){
-      mbp->playing |= G_PLR1;
-      thisPlayer = G_PLR1;
-    }
-    else if(!(mbp->playing & G_PLR2) ){
-      mbp->playing |= G_PLR2;
-      thisPlayer = G_PLR2;
-    }
-    else if(!(mbp->playing & G_PLR3) ){
-      mbp->playing |= G_PLR3;
-      thisPlayer = G_PLR3;
-    }
-    else if(!(mbp->playing & G_PLR4) ){
-      mbp->playing |= G_PLR4;
-      thisPlayer = G_PLR4;
-    }
-  thisPlayerLoc = placeElementOnMap(mbp, thisPlayer);
-  return thisPlayer;
-} */
-
 int placeIncrementPlayerOnMap(mapboard * mbp,int & thisPlayerLoc){
   int thisPlayer = -1;
 
@@ -387,7 +359,6 @@ int main(int argc, char *argv[])
 
    sem_wait(shm_sem);
    mbp->map[thisPlayerLoc] &= ~thisPlayer;
-   //mbp->playing &= ~thisPlayer;  # TODO
    mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
    bool isBoardEmpty = isGameBoardEmpty(mbp);
    sem_post(shm_sem);
