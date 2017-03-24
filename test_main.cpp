@@ -296,6 +296,15 @@ bool isGameBoardEmpty(mapboard * mbp){
 
 }
 
+int getPlayerFromMask(int pMask){
+  if(pMask & G_PLR0) return 0;
+  else if (pMask & G_PLR1) return 1;
+  else if (pMask & G_PLR2) return 2;
+  else if (pMask & G_PLR3) return 3;
+  else if (pMask & G_PLR4) return 4;
+  else return -1;
+}
+
 int main(int argc, char *argv[])
 {
   mapboard * mbp = NULL;
@@ -379,6 +388,7 @@ int main(int argc, char *argv[])
    sem_wait(shm_sem);
    mbp->map[thisPlayerLoc] &= ~thisPlayer;
    //mbp->playing &= ~thisPlayer;  # TODO
+   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
    bool isBoardEmpty = isGameBoardEmpty(mbp);
    sem_post(shm_sem);
 
