@@ -32,7 +32,8 @@ using namespace std;
 struct mapboard{
   int rows;
   int cols;
-  unsigned char playing;
+  //unsigned char playing;
+  pid_t player_pids[5];
   unsigned char map[0];
 };
 
@@ -136,34 +137,31 @@ void placeGoldsOnMap(mapboard * mbp, int goldCount){
 
 int placeIncrementPlayerOnMap(mapboard * mbp,int & thisPlayerLoc){
   int thisPlayer = -1;
-    if(!(mbp->playing & G_ANYP) ) // no one is playing
-    {
-      mbp->playing |= G_PLR0;
+
+    if(mbp->player_pids[0] == -1 ){
+      mbp->player_pids[0] = getpid();
       thisPlayer = G_PLR0;
     }
-    else if(!(mbp->playing & G_PLR0) ){
-      mbp->playing |= G_PLR0;
-      thisPlayer = G_PLR0;
-    }
-    else if(!(mbp->playing & G_PLR1) ){
-      mbp->playing |= G_PLR1;
+    else if(mbp->player_pids[1] == -1 ){
+      mbp->player_pids[0] = getpid();
       thisPlayer = G_PLR1;
     }
-    else if(!(mbp->playing & G_PLR2) ){
-      mbp->playing |= G_PLR2;
+    else if(mbp->player_pids[2] == -1 ){
+      mbp->player_pids[0] = getpid();
       thisPlayer = G_PLR2;
     }
-    else if(!(mbp->playing & G_PLR3) ){
-      mbp->playing |= G_PLR3;
+    else if(mbp->player_pids[3] == -1 ){
+      mbp->player_pids[0] = getpid();
       thisPlayer = G_PLR3;
     }
-    else if(!(mbp->playing & G_PLR4) ){
-      mbp->playing |= G_PLR4;
+    else if(mbp->player_pids[4] == -1 ){
+      mbp->player_pids[0] = getpid();
       thisPlayer = G_PLR4;
     }
   thisPlayerLoc = placeElementOnMap(mbp, thisPlayer);
   return thisPlayer;
 }
+
 
 bool isCurrentMoveOffMap(mapboard * mbp, int currentPos , int nextPos){
   unsigned char * mp;
@@ -262,6 +260,23 @@ const char * processPlayerMove(mapboard * mbp, int & thisPlayerLoc, int thisPlay
   return emptyMessage;
 }
 
+bool isGameBoardEmpty(mapboard * mbp){
+   if (mbp->player_pids[0] == -1 && mbp->player_pids[1] == -1 && mbp->player_pids[2] == -1 && mbp->player_pids[3] == -1 && mbp->player_pids[4] == -1)
+   return true;
+   else
+   return false;
+
+}
+
+int getPlayerFromMask(int pMask){
+  if(pMask & G_PLR0) return 0;
+  else if (pMask & G_PLR1) return 1;
+  else if (pMask & G_PLR2) return 2;
+  else if (pMask & G_PLR3) return 3;
+  else if (pMask & G_PLR4) return 4;
+  else return -1;
+}
+
 int main(int argc, char *argv[])
 {
   mapboard * mbp = NULL;
@@ -288,7 +303,8 @@ int main(int argc, char *argv[])
      mbp = initSharedMemory(rows, cols);
      mbp->rows = rows;
      mbp->cols = cols;
-     mbp->playing = 0;
+     //mbp->playing = 0;
+     mbp->player_pids[0] = -1; mbp->player_pids[1] = -1;mbp->player_pids[2] = -1;mbp->player_pids[3] = -1;mbp->player_pids[4] = -1;
 
      initGameMap(mbp, mapVector);
      placeGoldsOnMap(mbp, goldCount);
@@ -343,13 +359,13 @@ int main(int argc, char *argv[])
 
    sem_wait(shm_sem);
    mbp->map[thisPlayerLoc] &= ~thisPlayer;
-   mbp->playing &= ~thisPlayer;
-   currPlaying = mbp->playing;
+   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
+   bool isBoardEmpty = isGameBoardEmpty(mbp);
    sem_post(shm_sem);
 
    delete gameMap;
 
-   if(currPlaying == 0)
+   if(isBoardEmpty)
    {
       shm_unlink(SHM_NAME);
       sem_close(shm_sem);
