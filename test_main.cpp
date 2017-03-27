@@ -146,19 +146,19 @@ int placeIncrementPlayerOnMap(mapboard * mbp,int & thisPlayerLoc){
       thisPlayer = G_PLR0;
     }
     else if(mbp->player_pids[1] == -1 ){
-      mbp->player_pids[0] = getpid();
+      mbp->player_pids[1] = getpid();
       thisPlayer = G_PLR1;
     }
     else if(mbp->player_pids[2] == -1 ){
-      mbp->player_pids[0] = getpid();
+      mbp->player_pids[2] = getpid();
       thisPlayer = G_PLR2;
     }
     else if(mbp->player_pids[3] == -1 ){
-      mbp->player_pids[0] = getpid();
+      mbp->player_pids[3] = getpid();
       thisPlayer = G_PLR3;
     }
     else if(mbp->player_pids[4] == -1 ){
-      mbp->player_pids[0] = getpid();
+      mbp->player_pids[4] = getpid();
       thisPlayer = G_PLR4;
     }
   thisPlayerLoc = placeElementOnMap(mbp, thisPlayer);
@@ -283,7 +283,13 @@ int getPlayerFromMask(int pMask){
 void refreshMap(int){
   if(gameMap != NULL){
     (*gameMap).drawMap();
-    cout<<"CCCCCCCCCCCC"<<endl;
+  }
+}
+
+void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
+  for(int i=0; i<5; i++){
+    if(mbp->player_pids[i] != -1)
+      kill(mbp->player_pids[i], signal_enum);
   }
 }
 
@@ -357,6 +363,7 @@ int main(int argc, char *argv[])
            (*gameMap).postNotice(notice);
          }
          (*gameMap).drawMap();
+         sendSignalToActivePlayers(mbp, SIGINT);
          sem_post(shm_sem);
 
          if(thisQuitGameloop)
