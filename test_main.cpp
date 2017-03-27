@@ -27,7 +27,8 @@ using namespace std;
 #define  SHM_NAME "/PD_SharedMemory"
 #define REAL_GOLD_MESSAGE "You found Real Gold!!"
 #define FAKE_GOLD_MESSAGE "You found Fool's Gold!!"
-#define EMPTY_MESSAGE ""
+#define EMPTY_MESSAGE_PLAYER_MOVED "m"
+#define EMPTY_MESSAGE_PLAYER_NOT_MOVED "n"
 #define YOU_WON_MESSAGE "You Won!"
 
 struct mapboard{
@@ -204,7 +205,7 @@ bool isCurrentMoveValid(mapboard * mbp, int currentPos , int nextPos){
 const char * performGoldCheck(mapboard * mbp, int currentPos, bool & thisPlayerFoundGold){
   const char * realGoldMessage = REAL_GOLD_MESSAGE;
   const char * fakeGoldMessage = FAKE_GOLD_MESSAGE;
-  const char * emptyMessage = EMPTY_MESSAGE;
+  const char * emptyMessage = EMPTY_MESSAGE_PLAYER_MOVED;
 
   unsigned char * mp;
   mp = mbp->map;
@@ -223,7 +224,7 @@ const char * performGoldCheck(mapboard * mbp, int currentPos, bool & thisPlayerF
 
 const char * processPlayerMove(mapboard * mbp, int & thisPlayerLoc, int thisPlayer, int keyInput, bool & thisPlayerFoundGold, bool & thisQuitGameloop){
   unsigned char * mp;
-  const char * emptyMessage = EMPTY_MESSAGE;
+  const char * emptyMessage = EMPTY_MESSAGE_PLAYER_NOT_MOVED;
   const char * youWonMessage = YOU_WON_MESSAGE;
   bool quitGameLoop = false;
   mp = mbp->map;
@@ -358,13 +359,17 @@ int main(int argc, char *argv[])
        if(keyInput ==  108 || keyInput ==  107 || keyInput ==  106 || keyInput ==  104 ) // for l, k, j, h
        { sem_wait(shm_sem);
          notice = processPlayerMove(mbp, thisPlayerLoc,  thisPlayer, keyInput, thisPlayerFoundGold, thisQuitGameloop);
-
-         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
-           (*gameMap).postNotice(notice);
-         }
-         (*gameMap).drawMap();
-         sendSignalToActivePlayers(mbp, SIGINT);
          sem_post(shm_sem);
+         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
+           sendSignalToActivePlayers(mbp, SIGINT);
+           (*gameMap).postNotice(notice);
+           (*gameMap).drawMap();
+           sendSignalToActivePlayers(mbp, SIGINT);
+         }else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
+           sendSignalToActivePlayers(mbp, SIGINT);
+           (*gameMap).drawMap();
+         }
+
 
          if(thisQuitGameloop)
           break;
