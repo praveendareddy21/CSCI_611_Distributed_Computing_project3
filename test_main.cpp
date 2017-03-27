@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include "Map.h"
 #include <cstring>
+#include <signal.h>
 
 using namespace std;
 
@@ -36,6 +37,8 @@ struct mapboard{
   pid_t player_pids[5];
   unsigned char map[0];
 };
+
+Map * gameMap = NULL;
 
 
 mapboard * initSharedMemory(int rows, int columns){
@@ -277,10 +280,17 @@ int getPlayerFromMask(int pMask){
   else return -1;
 }
 
+void refreshMap(int){
+  if(gameMap != NULL){
+    (*gameMap).drawMap();
+    cout<<"CCCCCCCCCCCC"<<endl;
+  }
+}
+
 int main(int argc, char *argv[])
 {
   mapboard * mbp = NULL;
-  Map * gameMap = NULL;
+
   int rows, cols, goldCount, thisPlayer = 0, thisPlayerLoc= 0, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
@@ -288,6 +298,12 @@ int main(int argc, char *argv[])
   unsigned char * mp; //map pointer
   vector<vector< char > > mapVector;
   sem_t* shm_sem;
+
+  struct sigaction my_sig_handler;
+  my_sig_handler.sa_handler = refreshMap;
+  sigemptyset(&my_sig_handler.sa_mask);
+  my_sig_handler.sa_flags=0;
+  sigaction(SIGINT, &my_sig_handler, NULL);
 
   shm_sem = sem_open(SHM_SM_NAME ,O_RDWR,S_IRUSR|S_IWUSR,1);
   if(shm_sem == SEM_FAILED)
