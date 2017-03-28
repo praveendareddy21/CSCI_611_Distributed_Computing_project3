@@ -20,6 +20,11 @@
 #include "Map.h"
 #include <cstring>
 #include <signal.h>
+#include <mqueue.h>
+#include<cstring>
+#include <cstdio>
+#include <errno.h>
+#include <cstdlib>
 
 using namespace std;
 
@@ -30,6 +35,8 @@ using namespace std;
 #define EMPTY_MESSAGE_PLAYER_MOVED "m"
 #define EMPTY_MESSAGE_PLAYER_NOT_MOVED "n"
 #define YOU_WON_MESSAGE "You Won!"
+#define MSG_QUEUE_PREFIX "/PD_MSG_QUEUE_P"
+
 
 struct mapboard{
   int rows;
@@ -293,6 +300,29 @@ void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
       kill(mbp->player_pids[i], signal_enum);
   }
 }
+
+void initializeMsgQueue(int thisPlayer){
+
+
+
+}
+
+void cleanUpMsgQueue(int thisPlayer){
+
+}
+
+void sendMsgToPlayer(int thisPlayer, string msg){
+
+
+
+}
+
+void sendMsgBroadcastToPlayers(string msg){
+
+
+
+}
+
 
 int main(int argc, char *argv[])
 {
