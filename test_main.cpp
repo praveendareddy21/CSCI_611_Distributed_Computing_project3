@@ -356,9 +356,10 @@ void handleGameExit(int){
   sem_wait(shm_sem);
   mbp->map[thisPlayerLoc] &= ~thisPlayer;
   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
+  bool isBoardEmpty = isGameBoardEmpty(mbp);
   sem_post(shm_sem);
 
-  bool isBoardEmpty = isGameBoardEmpty(mbp);
+
   delete gameMap;
 
   if(isBoardEmpty)
@@ -382,6 +383,11 @@ void setUpSignalHandlers(){
 //  sigaction(SIGINT, &exit_action, NULL);
 //  sigaction(SIGHUP, &exit_action, NULL);
 
+  struct sigaction my_sig_handler;
+  my_sig_handler.sa_handler = refreshMap;
+  sigemptyset(&my_sig_handler.sa_mask);
+  my_sig_handler.sa_flags=0;
+  sigaction(SIGUSR1, &my_sig_handler, NULL);
 
 }
 
@@ -394,12 +400,6 @@ int main(int argc, char *argv[])
   unsigned char * mp; //map pointer
   vector<vector< char > > mapVector;
 
-
-  struct sigaction my_sig_handler;
-  my_sig_handler.sa_handler = refreshMap;
-  sigemptyset(&my_sig_handler.sa_mask);
-  my_sig_handler.sa_flags=0;
-  sigaction(SIGINT, &my_sig_handler, NULL);
 
   shm_sem = sem_open(SHM_SM_NAME ,O_RDWR,S_IRUSR|S_IWUSR,1);
   if(shm_sem == SEM_FAILED)
@@ -441,6 +441,7 @@ int main(int argc, char *argv[])
      sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      sem_post(shm_sem);
+     setUpSignalHandlers();
 
      while(keyInput != 81){ // game loop  key Q
        keyInput =  (*gameMap).getKey();
@@ -453,9 +454,9 @@ int main(int argc, char *argv[])
            sendSignalToActivePlayers(mbp, SIGINT);
            (*gameMap).postNotice(notice);
            (*gameMap).drawMap();
-           sendSignalToActivePlayers(mbp, SIGINT);
+           sendSignalToActivePlayers(mbp, SIGUSR1);
          }else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
-           sendSignalToActivePlayers(mbp, SIGINT);
+           sendSignalToActivePlayers(mbp, SIGUSR1);
            (*gameMap).drawMap();
          }
 
