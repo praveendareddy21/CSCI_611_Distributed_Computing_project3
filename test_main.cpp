@@ -47,7 +47,11 @@ struct mapboard{
 };
 
 Map * gameMap = NULL;
-
+mqd_t readqueue_fd; //message queue file descriptor
+string mq_name="/todd_player1_mq";
+sem_t* shm_sem;
+mapboard * mbp = NULL;
+int thisPlayer = 0, thisPlayerLoc= 0;
 
 mapboard * initSharedMemory(int rows, int columns){
   int fd, size;
@@ -322,19 +326,74 @@ void sendMsgBroadcastToPlayers(string msg){
 
 
 }
+void receiveMessage(int){
+  int err;
+  char msg[251]; //a char array for the message
+  memset(msg, 0, 251); //zero it out (if necessary)
+  struct sigevent mq_notification_event;
+  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
+  mq_notification_event.sigev_signo=SIGUSR2;
+  mq_notify(readqueue_fd, &mq_notification_event);
 
+  while((err=mq_receive(readqueue_fd, msg, 250, NULL))!=-1)
+  {
+    //call postNotice(msg) for your Map object;
+    cout << "Message received: " << msg << endl;
+    memset(msg, 0, 251);//set all characters to '\0'
+  }
+  //we exit while-loop when mq_receive returns -1
+  //if errno==EAGAIN that is normal: there is no message waiting
+  if(errno!=EAGAIN)
+  {
+    perror("mq_receive");
+    exit(1);
+  }
+
+}
+
+void handleGameExit(int){
+  // clean ups all game's stuff when exiting forceful or otherwise
+  sem_wait(shm_sem);
+  mbp->map[thisPlayerLoc] &= ~thisPlayer;
+  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
+  sem_post(shm_sem);
+
+  bool isBoardEmpty = isGameBoardEmpty(mbp);
+  delete gameMap;
+
+  if(isBoardEmpty)
+  {
+     shm_unlink(SHM_NAME);
+     sem_close(shm_sem);
+     sem_unlink(SHM_SM_NAME);
+  }
+
+}
+
+void setUpSignalHandlers(){
+  struct sigaction exit_action;
+  exit_action.sa_handler = handleGameExit;
+  exit_action.sa_flags=0;
+  sigemptyset(&exit_action.sa_mask);
+  sigaction(SIGINT, &exit_action, NULL);
+
+
+//  sigaction(SIGTERM, &exit_action, NULL);
+//  sigaction(SIGINT, &exit_action, NULL);
+//  sigaction(SIGHUP, &exit_action, NULL);
+
+
+}
 
 int main(int argc, char *argv[])
 {
-  mapboard * mbp = NULL;
-
-  int rows, cols, goldCount, thisPlayer = 0, thisPlayerLoc= 0, keyInput = 0, currPlaying = -1;
+  int rows, cols, goldCount, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
   const char * notice;
   unsigned char * mp; //map pointer
   vector<vector< char > > mapVector;
-  sem_t* shm_sem;
+
 
   struct sigaction my_sig_handler;
   my_sig_handler.sa_handler = refreshMap;
@@ -415,19 +474,6 @@ int main(int argc, char *argv[])
      sem_post(shm_sem);
    }
 
-   sem_wait(shm_sem);
-   mbp->map[thisPlayerLoc] &= ~thisPlayer;
-   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
-   bool isBoardEmpty = isGameBoardEmpty(mbp);
-   sem_post(shm_sem);
-
-   delete gameMap;
-
-   if(isBoardEmpty)
-   {
-      shm_unlink(SHM_NAME);
-      sem_close(shm_sem);
-      sem_unlink(SHM_SM_NAME);
-   }
+   handleGameExit(0);
    return 0;
 }
