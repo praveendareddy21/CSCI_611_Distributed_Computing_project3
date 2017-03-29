@@ -361,7 +361,8 @@ void handleGameExit(int){
   bool isBoardEmpty = isGameBoardEmpty(mbp);
   sem_post(shm_sem);
 
-
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
   delete gameMap;
 
   if(isBoardEmpty)
@@ -391,23 +392,13 @@ void setUpSignalHandlers(){
   my_sig_handler.sa_flags=0;
   sigaction(SIGUSR1, &my_sig_handler, NULL);
 
-}
-
-void clean_up(int)
-{
-  cerr << "Cleaning up message queue" << endl;
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-  exit(1);
-}
-
-int main(int argc, char *argv[])
-{
+  /*
   struct sigaction exit_handler;
   exit_handler.sa_handler=clean_up;
   sigemptyset(&exit_handler.sa_mask);
   exit_handler.sa_flags=0;
   sigaction(SIGINT, &exit_handler, NULL);
+  */
 
 
 
@@ -436,16 +427,21 @@ int main(int argc, char *argv[])
   mq_notification_event.sigev_signo=SIGUSR2;
   mq_notify(readqueue_fd, &mq_notification_event);
 
+}
 
-  //magic happens
-  for(int i=0; i<100; ++i)
-  {
-    //cout << "counter=" << i << endl;
-    //sleep(1);
-  }
+void clean_up(int)
+{
+  cerr << "Cleaning up message queue" << endl;
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
+  exit(1);
+}
+
+int main(int argc, char *argv[])
+{
 
 
-  //return 0;
+
 
 
   //############################################## mq end###############################
