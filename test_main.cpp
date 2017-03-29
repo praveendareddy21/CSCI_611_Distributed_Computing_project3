@@ -47,7 +47,8 @@ struct mapboard{
 };
 
 Map * gameMap = NULL;
-
+mqd_t readqueue_fd; //message queue file descriptor
+string mq_name="/todd_player1_mq";
 
 mapboard * initSharedMemory(int rows, int columns){
   int fd, size;
@@ -320,6 +321,31 @@ void sendMsgToPlayer(int thisPlayer, string msg){
 void sendMsgBroadcastToPlayers(string msg){
 
 
+
+}
+
+void receiveMessage(int){
+  int err;
+  char msg[251]; //a char array for the message
+  memset(msg, 0, 251); //zero it out (if necessary)
+  struct sigevent mq_notification_event;
+  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
+  mq_notification_event.sigev_signo=SIGUSR2;
+  mq_notify(readqueue_fd, &mq_notification_event);
+
+  while((err=mq_receive(readqueue_fd, msg, 250, NULL))!=-1)
+  {
+    //call postNotice(msg) for your Map object;
+    cout << "Message received: " << msg << endl;
+    memset(msg, 0, 251);//set all characters to '\0'
+  }
+  //we exit while-loop when mq_receive returns -1
+  //if errno==EAGAIN that is normal: there is no message waiting
+  if(errno!=EAGAIN)
+  {
+    perror("mq_receive");
+    exit(1);
+  }
 
 }
 
