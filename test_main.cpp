@@ -48,7 +48,7 @@ struct mapboard{
 
 Map * gameMap = NULL;
 mqd_t readqueue_fd; //message queue file descriptor
-string mq_name="/todd_player1_mq";
+string mq_name="/todd_player2_mq";
 sem_t* shm_sem;
 mapboard * mbp = NULL;
 int thisPlayer = 0, thisPlayerLoc= 0;
@@ -337,8 +337,10 @@ void receiveMessage(int){
 
   while((err=mq_receive(readqueue_fd, msg, 250, NULL))!=-1)
   {
+    if(gameMap != NULL)
+      (*gameMap).postNotice(msg);
     //call postNotice(msg) for your Map object;
-    cout << "Message received: " << msg << endl;
+    //cout << "Message received: " << msg << endl;
     memset(msg, 0, 251);//set all characters to '\0'
   }
   //we exit while-loop when mq_receive returns -1
@@ -391,8 +393,63 @@ void setUpSignalHandlers(){
 
 }
 
+void clean_up(int)
+{
+  cerr << "Cleaning up message queue" << endl;
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
+  exit(1);
+}
+
 int main(int argc, char *argv[])
 {
+  struct sigaction exit_handler;
+  exit_handler.sa_handler=clean_up;
+  sigemptyset(&exit_handler.sa_mask);
+  exit_handler.sa_flags=0;
+  sigaction(SIGINT, &exit_handler, NULL);
+
+
+
+
+  struct sigaction action_to_take;
+  //action_to_take.sa_handler=read_message;
+  action_to_take.sa_handler=receiveMessage;
+  sigemptyset(&action_to_take.sa_mask);
+  action_to_take.sa_flags=0;
+  sigaction(SIGUSR2, &action_to_take, NULL);
+
+  struct mq_attr mq_attributes;
+  mq_attributes.mq_flags=0;
+  mq_attributes.mq_maxmsg=10;
+  mq_attributes.mq_msgsize=120;
+
+  if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
+          S_IRUSR|S_IWUSR, &mq_attributes))==-1)
+  {
+    perror("mq_open");
+    exit(1);
+  }
+  //set up message queue to receive signal whenever message comes in
+  struct sigevent mq_notification_event;
+  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
+  mq_notification_event.sigev_signo=SIGUSR2;
+  mq_notify(readqueue_fd, &mq_notification_event);
+
+
+  //magic happens
+  for(int i=0; i<100; ++i)
+  {
+    //cout << "counter=" << i << endl;
+    //sleep(1);
+  }
+
+
+  //return 0;
+
+
+  //############################################## mq end###############################
+
   int rows, cols, goldCount, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
@@ -475,6 +532,8 @@ int main(int argc, char *argv[])
      sem_post(shm_sem);
    }
 
+   mq_close(readqueue_fd);
+   mq_unlink(mq_name.c_str());
    handleGameExit(0);
    return 0;
 }
