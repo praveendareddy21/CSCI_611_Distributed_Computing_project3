@@ -19,12 +19,6 @@
 #include <sys/types.h>
 #include "Map.h"
 #include <cstring>
-#include <signal.h>
-#include <mqueue.h>
-#include<cstring>
-#include <cstdio>
-#include <errno.h>
-#include <cstdlib>
 
 using namespace std;
 
@@ -32,26 +26,16 @@ using namespace std;
 #define  SHM_NAME "/PD_SharedMemory"
 #define REAL_GOLD_MESSAGE "You found Real Gold!!"
 #define FAKE_GOLD_MESSAGE "You found Fool's Gold!!"
-#define EMPTY_MESSAGE_PLAYER_MOVED "m"
-#define EMPTY_MESSAGE_PLAYER_NOT_MOVED "n"
+#define EMPTY_MESSAGE ""
 #define YOU_WON_MESSAGE "You Won!"
-#define MSG_QUEUE_PREFIX "/PD_MSG_QUEUE_P"
-
 
 struct mapboard{
   int rows;
   int cols;
-  //unsigned char playing;
-  pid_t player_pids[5];
+  unsigned char playing;
   unsigned char map[0];
 };
 
-Map * gameMap = NULL;
-mqd_t readqueue_fd; //message queue file descriptor
-string mq_name="/todd_player2_mq";
-sem_t* shm_sem;
-mapboard * mbp = NULL;
-int thisPlayer = 0, thisPlayerLoc= 0;
 
 mapboard * initSharedMemory(int rows, int columns){
   int fd, size;
@@ -152,31 +136,34 @@ void placeGoldsOnMap(mapboard * mbp, int goldCount){
 
 int placeIncrementPlayerOnMap(mapboard * mbp,int & thisPlayerLoc){
   int thisPlayer = -1;
-
-    if(mbp->player_pids[0] == -1 ){
-      mbp->player_pids[0] = getpid();
+    if(!(mbp->playing & G_ANYP) ) // no one is playing
+    {
+      mbp->playing |= G_PLR0;
       thisPlayer = G_PLR0;
     }
-    else if(mbp->player_pids[1] == -1 ){
-      mbp->player_pids[1] = getpid();
+    else if(!(mbp->playing & G_PLR0) ){
+      mbp->playing |= G_PLR0;
+      thisPlayer = G_PLR0;
+    }
+    else if(!(mbp->playing & G_PLR1) ){
+      mbp->playing |= G_PLR1;
       thisPlayer = G_PLR1;
     }
-    else if(mbp->player_pids[2] == -1 ){
-      mbp->player_pids[2] = getpid();
+    else if(!(mbp->playing & G_PLR2) ){
+      mbp->playing |= G_PLR2;
       thisPlayer = G_PLR2;
     }
-    else if(mbp->player_pids[3] == -1 ){
-      mbp->player_pids[3] = getpid();
+    else if(!(mbp->playing & G_PLR3) ){
+      mbp->playing |= G_PLR3;
       thisPlayer = G_PLR3;
     }
-    else if(mbp->player_pids[4] == -1 ){
-      mbp->player_pids[4] = getpid();
+    else if(!(mbp->playing & G_PLR4) ){
+      mbp->playing |= G_PLR4;
       thisPlayer = G_PLR4;
     }
   thisPlayerLoc = placeElementOnMap(mbp, thisPlayer);
   return thisPlayer;
 }
-
 
 bool isCurrentMoveOffMap(mapboard * mbp, int currentPos , int nextPos){
   unsigned char * mp;
@@ -216,7 +203,7 @@ bool isCurrentMoveValid(mapboard * mbp, int currentPos , int nextPos){
 const char * performGoldCheck(mapboard * mbp, int currentPos, bool & thisPlayerFoundGold){
   const char * realGoldMessage = REAL_GOLD_MESSAGE;
   const char * fakeGoldMessage = FAKE_GOLD_MESSAGE;
-  const char * emptyMessage = EMPTY_MESSAGE_PLAYER_MOVED;
+  const char * emptyMessage = EMPTY_MESSAGE;
 
   unsigned char * mp;
   mp = mbp->map;
@@ -235,7 +222,7 @@ const char * performGoldCheck(mapboard * mbp, int currentPos, bool & thisPlayerF
 
 const char * processPlayerMove(mapboard * mbp, int & thisPlayerLoc, int thisPlayer, int keyInput, bool & thisPlayerFoundGold, bool & thisQuitGameloop){
   unsigned char * mp;
-  const char * emptyMessage = EMPTY_MESSAGE_PLAYER_NOT_MOVED;
+  const char * emptyMessage = EMPTY_MESSAGE;
   const char * youWonMessage = YOU_WON_MESSAGE;
   bool quitGameLoop = false;
   mp = mbp->map;
@@ -275,203 +262,17 @@ const char * processPlayerMove(mapboard * mbp, int & thisPlayerLoc, int thisPlay
   return emptyMessage;
 }
 
-bool isGameBoardEmpty(mapboard * mbp){
-   if (mbp->player_pids[0] == -1 && mbp->player_pids[1] == -1 && mbp->player_pids[2] == -1 && mbp->player_pids[3] == -1 && mbp->player_pids[4] == -1)
-   return true;
-   else
-   return false;
-
-}
-
-int getPlayerFromMask(int pMask){
-  if(pMask & G_PLR0) return 0;
-  else if (pMask & G_PLR1) return 1;
-  else if (pMask & G_PLR2) return 2;
-  else if (pMask & G_PLR3) return 3;
-  else if (pMask & G_PLR4) return 4;
-  else return -1;
-}
-
-unsigned int getActivePlayersMask(){
-  unsigned int mask = 0;
-  if(mbp->player_pids[0] != -1 ){
-    mask |= G_PLR0;
-  }
-  if(mbp->player_pids[1] !=  -1 ){
-    mask |= G_PLR1;
-  }
-  if(mbp->player_pids[2] !=  -1 ){
-    mask |= G_PLR2;
-  }
-  if(mbp->player_pids[3] !=  -1 ){
-    mask |= G_PLR3;
-  }
-  if(mbp->player_pids[4] !=  -1 ){
-    mask |= G_PLR4;
-  }
-return mask;
-}
-
-void refreshMap(int){
-  if(gameMap != NULL){
-    (*gameMap).drawMap();
-  }
-}
-void handleGameExit(int){
-  // clean ups all game's stuff when exiting forceful or otherwise
-  delete gameMap;
-  
-  sem_wait(shm_sem);
-  mbp->map[thisPlayerLoc] &= ~thisPlayer;
-  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
-  sem_post(shm_sem);
-
-  bool isBoardEmpty = isGameBoardEmpty(mbp);
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-
-
-  if(isBoardEmpty)
-  {
-     shm_unlink(SHM_NAME);
-     sem_close(shm_sem);
-     sem_unlink(SHM_SM_NAME);
-  }
-  exit(0);
-
-}
-
-void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
-  for(int i=0; i<5; i++){
-    if(mbp->player_pids[i] != -1)
-      kill(mbp->player_pids[i], signal_enum);
-  }
-}
-
-void initializeMsgQueue(int thisPlayer){
-  struct mq_attr mq_attributes;
-  mq_attributes.mq_flags=0;
-  mq_attributes.mq_maxmsg=10;
-  mq_attributes.mq_msgsize=120;
-
-  if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
-          S_IRUSR|S_IWUSR, &mq_attributes))==-1)
-  {
-    perror("mq_open");
-    exit(1);
-  }
-  //set up message queue to receive signal whenever message comes in
-  struct sigevent mq_notification_event;
-  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
-  mq_notification_event.sigev_signo=SIGUSR2;
-  mq_notify(readqueue_fd, &mq_notification_event);
-
-
-}
-
-void cleanUpMsgQueue(int thisPlayer){
-
-}
-
-void sendMsgToPlayer(int thisPlayer, string msg){
-
-
-
-}
-
-void sendMsgBroadcastToPlayers(string msg){
-
-
-
-}
-void receiveMessage(int){
-  int err;
-  char msg[251]; //a char array for the message
-  memset(msg, 0, 251); //zero it out (if necessary)
-  struct sigevent mq_notification_event;
-  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
-  mq_notification_event.sigev_signo=SIGUSR2;
-  mq_notify(readqueue_fd, &mq_notification_event);
-
-  while((err=mq_receive(readqueue_fd, msg, 250, NULL))!=-1)
-  {
-    if(gameMap != NULL)
-      (*gameMap).postNotice(msg);
-    //call postNotice(msg) for your Map object;
-    //cout << "Message received: " << msg << endl;
-    memset(msg, 0, 251);//set all characters to '\0'
-  }
-  //we exit while-loop when mq_receive returns -1
-  //if errno==EAGAIN that is normal: there is no message waiting
-  if(errno!=EAGAIN)
-  {
-    perror("mq_receive");
-    handleGameExit(0);
-  }
-
-}
-
-
-
-void setUpSignalHandlers(){
-  struct sigaction exit_action;
-  exit_action.sa_handler = handleGameExit;
-  exit_action.sa_flags=0;
-  sigemptyset(&exit_action.sa_mask);
-  sigaction(SIGINT, &exit_action, NULL);
-  sigaction(SIGTERM, &exit_action, NULL);
-  sigaction(SIGHUP, &exit_action, NULL);
-
-  struct sigaction my_sig_handler;
-  my_sig_handler.sa_handler = refreshMap;
-  sigemptyset(&my_sig_handler.sa_mask);
-  my_sig_handler.sa_flags=0;
-  sigaction(SIGUSR1, &my_sig_handler, NULL);
-
-  /*
-  struct sigaction exit_handler;
-  exit_handler.sa_handler=clean_up;
-  sigemptyset(&exit_handler.sa_mask);
-  exit_handler.sa_flags=0;
-  sigaction(SIGINT, &exit_handler, NULL);
-  */
-
-
-
-
-  struct sigaction action_to_take;
-  //action_to_take.sa_handler=read_message;
-  action_to_take.sa_handler=receiveMessage;
-  sigemptyset(&action_to_take.sa_mask);
-  action_to_take.sa_flags=0;
-  sigaction(SIGUSR2, &action_to_take, NULL);
-
-}
-
-void clean_up(int)
-{
-  cerr << "Cleaning up message queue" << endl;
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-  exit(1);
-}
-
 int main(int argc, char *argv[])
 {
-
-
-
-
-
-  //############################################## mq end###############################
-
-  int rows, cols, goldCount, keyInput = 0, currPlaying = -1;
+  mapboard * mbp = NULL;
+  Map * gameMap = NULL;
+  int rows, cols, goldCount, thisPlayer = 0, thisPlayerLoc= 0, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
   const char * notice;
   unsigned char * mp; //map pointer
   vector<vector< char > > mapVector;
-
+  sem_t* shm_sem;
 
   shm_sem = sem_open(SHM_SM_NAME ,O_RDWR,S_IRUSR|S_IWUSR,1);
   if(shm_sem == SEM_FAILED)
@@ -487,8 +288,7 @@ int main(int argc, char *argv[])
      mbp = initSharedMemory(rows, cols);
      mbp->rows = rows;
      mbp->cols = cols;
-     //mbp->playing = 0;
-     mbp->player_pids[0] = -1; mbp->player_pids[1] = -1;mbp->player_pids[2] = -1;mbp->player_pids[3] = -1;mbp->player_pids[4] = -1;
+     mbp->playing = 0;
 
      initGameMap(mbp, mapVector);
      placeGoldsOnMap(mbp, goldCount);
@@ -513,7 +313,6 @@ int main(int argc, char *argv[])
      sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      sem_post(shm_sem);
-     setUpSignalHandlers();
 
      while(keyInput != 81){ // game loop  key Q
        keyInput =  (*gameMap).getKey();
@@ -521,17 +320,12 @@ int main(int argc, char *argv[])
        if(keyInput ==  108 || keyInput ==  107 || keyInput ==  106 || keyInput ==  104 ) // for l, k, j, h
        { sem_wait(shm_sem);
          notice = processPlayerMove(mbp, thisPlayerLoc,  thisPlayer, keyInput, thisPlayerFoundGold, thisQuitGameloop);
-         sem_post(shm_sem);
-         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
-           sendSignalToActivePlayers(mbp, SIGINT);
-           (*gameMap).postNotice(notice);
-           (*gameMap).drawMap();
-           sendSignalToActivePlayers(mbp, SIGUSR1);
-         }else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
-           sendSignalToActivePlayers(mbp, SIGUSR1);
-           (*gameMap).drawMap();
-         }
 
+         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
+           (*gameMap).postNotice(notice);
+         }
+         (*gameMap).drawMap();
+         sem_post(shm_sem);
 
          if(thisQuitGameloop)
           break;
@@ -547,6 +341,19 @@ int main(int argc, char *argv[])
      sem_post(shm_sem);
    }
 
-   handleGameExit(0);
+   sem_wait(shm_sem);
+   mbp->map[thisPlayerLoc] &= ~thisPlayer;
+   mbp->playing &= ~thisPlayer;
+   currPlaying = mbp->playing;
+   sem_post(shm_sem);
+
+   delete gameMap;
+
+   if(currPlaying == 0)
+   {
+      shm_unlink(SHM_NAME);
+      sem_close(shm_sem);
+      sem_unlink(SHM_SM_NAME);
+   }
    return 0;
 }
