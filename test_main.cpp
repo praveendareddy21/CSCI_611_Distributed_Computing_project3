@@ -292,10 +292,53 @@ int getPlayerFromMask(int pMask){
   else return -1;
 }
 
+unsigned int getActivePlayersMask(){
+  unsigned int mask = 0;
+  if(mbp->player_pids[0] != -1 ){
+    mask |= G_PLR0;
+  }
+  if(mbp->player_pids[1] !=  -1 ){
+    mask |= G_PLR1;
+  }
+  if(mbp->player_pids[2] !=  -1 ){
+    mask |= G_PLR2;
+  }
+  if(mbp->player_pids[3] !=  -1 ){
+    mask |= G_PLR3;
+  }
+  if(mbp->player_pids[4] !=  -1 ){
+    mask |= G_PLR4;
+  }
+return mask;
+}
+
 void refreshMap(int){
   if(gameMap != NULL){
     (*gameMap).drawMap();
   }
+}
+void handleGameExit(int){
+  // clean ups all game's stuff when exiting forceful or otherwise
+  delete gameMap;
+  
+  sem_wait(shm_sem);
+  mbp->map[thisPlayerLoc] &= ~thisPlayer;
+  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
+  sem_post(shm_sem);
+
+  bool isBoardEmpty = isGameBoardEmpty(mbp);
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
+
+
+  if(isBoardEmpty)
+  {
+     shm_unlink(SHM_NAME);
+     sem_close(shm_sem);
+     sem_unlink(SHM_SM_NAME);
+  }
+  exit(0);
+
 }
 
 void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
@@ -306,7 +349,22 @@ void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
 }
 
 void initializeMsgQueue(int thisPlayer){
+  struct mq_attr mq_attributes;
+  mq_attributes.mq_flags=0;
+  mq_attributes.mq_maxmsg=10;
+  mq_attributes.mq_msgsize=120;
 
+  if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
+          S_IRUSR|S_IWUSR, &mq_attributes))==-1)
+  {
+    perror("mq_open");
+    exit(1);
+  }
+  //set up message queue to receive signal whenever message comes in
+  struct sigevent mq_notification_event;
+  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
+  mq_notification_event.sigev_signo=SIGUSR2;
+  mq_notify(readqueue_fd, &mq_notification_event);
 
 
 }
@@ -348,31 +406,12 @@ void receiveMessage(int){
   if(errno!=EAGAIN)
   {
     perror("mq_receive");
-    exit(1);
+    handleGameExit(0);
   }
 
 }
 
-void handleGameExit(int){
-  // clean ups all game's stuff when exiting forceful or otherwise
-  sem_wait(shm_sem);
-  mbp->map[thisPlayerLoc] &= ~thisPlayer;
-  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
-  bool isBoardEmpty = isGameBoardEmpty(mbp);
-  sem_post(shm_sem);
 
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-  delete gameMap;
-
-  if(isBoardEmpty)
-  {
-     shm_unlink(SHM_NAME);
-     sem_close(shm_sem);
-     sem_unlink(SHM_SM_NAME);
-  }
-
-}
 
 void setUpSignalHandlers(){
   struct sigaction exit_action;
@@ -406,23 +445,6 @@ void setUpSignalHandlers(){
   sigemptyset(&action_to_take.sa_mask);
   action_to_take.sa_flags=0;
   sigaction(SIGUSR2, &action_to_take, NULL);
-
-  struct mq_attr mq_attributes;
-  mq_attributes.mq_flags=0;
-  mq_attributes.mq_maxmsg=10;
-  mq_attributes.mq_msgsize=120;
-
-  if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
-          S_IRUSR|S_IWUSR, &mq_attributes))==-1)
-  {
-    perror("mq_open");
-    exit(1);
-  }
-  //set up message queue to receive signal whenever message comes in
-  struct sigevent mq_notification_event;
-  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
-  mq_notification_event.sigev_signo=SIGUSR2;
-  mq_notify(readqueue_fd, &mq_notification_event);
 
 }
 
