@@ -48,7 +48,7 @@ struct mapboard{
 
 Map * gameMap = NULL;
 mqd_t readqueue_fd; //message queue file descriptor
-string mq_name="/todd_player1_mq";
+string mq_name="/todd_player2_mq";
 sem_t* shm_sem;
 mapboard * mbp = NULL;
 int thisPlayer = 0, thisPlayerLoc= 0;
@@ -292,10 +292,53 @@ int getPlayerFromMask(int pMask){
   else return -1;
 }
 
+unsigned int getActivePlayersMask(){
+  unsigned int mask = 0;
+  if(mbp->player_pids[0] != -1 ){
+    mask |= G_PLR0;
+  }
+  if(mbp->player_pids[1] !=  -1 ){
+    mask |= G_PLR1;
+  }
+  if(mbp->player_pids[2] !=  -1 ){
+    mask |= G_PLR2;
+  }
+  if(mbp->player_pids[3] !=  -1 ){
+    mask |= G_PLR3;
+  }
+  if(mbp->player_pids[4] !=  -1 ){
+    mask |= G_PLR4;
+  }
+return mask;
+}
+
 void refreshMap(int){
   if(gameMap != NULL){
     (*gameMap).drawMap();
   }
+}
+void handleGameExit(int){
+  // clean ups all game's stuff when exiting forceful or otherwise
+  delete gameMap;
+  
+  sem_wait(shm_sem);
+  mbp->map[thisPlayerLoc] &= ~thisPlayer;
+  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
+  sem_post(shm_sem);
+
+  bool isBoardEmpty = isGameBoardEmpty(mbp);
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
+
+
+  if(isBoardEmpty)
+  {
+     shm_unlink(SHM_NAME);
+     sem_close(shm_sem);
+     sem_unlink(SHM_SM_NAME);
+  }
+  exit(0);
+
 }
 
 void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
@@ -306,7 +349,22 @@ void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
 }
 
 void initializeMsgQueue(int thisPlayer){
+  struct mq_attr mq_attributes;
+  mq_attributes.mq_flags=0;
+  mq_attributes.mq_maxmsg=10;
+  mq_attributes.mq_msgsize=120;
 
+  if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
+          S_IRUSR|S_IWUSR, &mq_attributes))==-1)
+  {
+    perror("mq_open");
+    exit(1);
+  }
+  //set up message queue to receive signal whenever message comes in
+  struct sigevent mq_notification_event;
+  mq_notification_event.sigev_notify=SIGEV_SIGNAL;
+  mq_notification_event.sigev_signo=SIGUSR2;
+  mq_notify(readqueue_fd, &mq_notification_event);
 
 
 }
@@ -337,8 +395,10 @@ void receiveMessage(int){
 
   while((err=mq_receive(readqueue_fd, msg, 250, NULL))!=-1)
   {
+    if(gameMap != NULL)
+      (*gameMap).postNotice(msg);
     //call postNotice(msg) for your Map object;
-    cout << "Message received: " << msg << endl;
+    //cout << "Message received: " << msg << endl;
     memset(msg, 0, 251);//set all characters to '\0'
   }
   //we exit while-loop when mq_receive returns -1
@@ -346,29 +406,12 @@ void receiveMessage(int){
   if(errno!=EAGAIN)
   {
     perror("mq_receive");
-    exit(1);
+    handleGameExit(0);
   }
 
 }
 
-void handleGameExit(int){
-  // clean ups all game's stuff when exiting forceful or otherwise
-  sem_wait(shm_sem);
-  mbp->map[thisPlayerLoc] &= ~thisPlayer;
-  mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
-  sem_post(shm_sem);
 
-  bool isBoardEmpty = isGameBoardEmpty(mbp);
-  delete gameMap;
-
-  if(isBoardEmpty)
-  {
-     shm_unlink(SHM_NAME);
-     sem_close(shm_sem);
-     sem_unlink(SHM_SM_NAME);
-  }
-
-}
 
 void setUpSignalHandlers(){
   struct sigaction exit_action;
@@ -376,17 +419,52 @@ void setUpSignalHandlers(){
   exit_action.sa_flags=0;
   sigemptyset(&exit_action.sa_mask);
   sigaction(SIGINT, &exit_action, NULL);
+  sigaction(SIGTERM, &exit_action, NULL);
+  sigaction(SIGHUP, &exit_action, NULL);
+
+  struct sigaction my_sig_handler;
+  my_sig_handler.sa_handler = refreshMap;
+  sigemptyset(&my_sig_handler.sa_mask);
+  my_sig_handler.sa_flags=0;
+  sigaction(SIGUSR1, &my_sig_handler, NULL);
+
+  /*
+  struct sigaction exit_handler;
+  exit_handler.sa_handler=clean_up;
+  sigemptyset(&exit_handler.sa_mask);
+  exit_handler.sa_flags=0;
+  sigaction(SIGINT, &exit_handler, NULL);
+  */
 
 
-//  sigaction(SIGTERM, &exit_action, NULL);
-//  sigaction(SIGINT, &exit_action, NULL);
-//  sigaction(SIGHUP, &exit_action, NULL);
 
 
+  struct sigaction action_to_take;
+  //action_to_take.sa_handler=read_message;
+  action_to_take.sa_handler=receiveMessage;
+  sigemptyset(&action_to_take.sa_mask);
+  action_to_take.sa_flags=0;
+  sigaction(SIGUSR2, &action_to_take, NULL);
+
+}
+
+void clean_up(int)
+{
+  cerr << "Cleaning up message queue" << endl;
+  mq_close(readqueue_fd);
+  mq_unlink(mq_name.c_str());
+  exit(1);
 }
 
 int main(int argc, char *argv[])
 {
+
+
+
+
+
+  //############################################## mq end###############################
+
   int rows, cols, goldCount, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
@@ -394,12 +472,6 @@ int main(int argc, char *argv[])
   unsigned char * mp; //map pointer
   vector<vector< char > > mapVector;
 
-
-  struct sigaction my_sig_handler;
-  my_sig_handler.sa_handler = refreshMap;
-  sigemptyset(&my_sig_handler.sa_mask);
-  my_sig_handler.sa_flags=0;
-  sigaction(SIGINT, &my_sig_handler, NULL);
 
   shm_sem = sem_open(SHM_SM_NAME ,O_RDWR,S_IRUSR|S_IWUSR,1);
   if(shm_sem == SEM_FAILED)
@@ -441,6 +513,7 @@ int main(int argc, char *argv[])
      sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      sem_post(shm_sem);
+     setUpSignalHandlers();
 
      while(keyInput != 81){ // game loop  key Q
        keyInput =  (*gameMap).getKey();
@@ -453,9 +526,9 @@ int main(int argc, char *argv[])
            sendSignalToActivePlayers(mbp, SIGINT);
            (*gameMap).postNotice(notice);
            (*gameMap).drawMap();
-           sendSignalToActivePlayers(mbp, SIGINT);
+           sendSignalToActivePlayers(mbp, SIGUSR1);
          }else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
-           sendSignalToActivePlayers(mbp, SIGINT);
+           sendSignalToActivePlayers(mbp, SIGUSR1);
            (*gameMap).drawMap();
          }
 
