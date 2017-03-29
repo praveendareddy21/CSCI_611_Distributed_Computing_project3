@@ -380,11 +380,8 @@ void setUpSignalHandlers(){
   exit_action.sa_flags=0;
   sigemptyset(&exit_action.sa_mask);
   sigaction(SIGINT, &exit_action, NULL);
-
-
-//  sigaction(SIGTERM, &exit_action, NULL);
-//  sigaction(SIGINT, &exit_action, NULL);
-//  sigaction(SIGHUP, &exit_action, NULL);
+  sigaction(SIGTERM, &exit_action, NULL);
+  sigaction(SIGHUP, &exit_action, NULL);
 
   struct sigaction my_sig_handler;
   my_sig_handler.sa_handler = refreshMap;
@@ -528,8 +525,6 @@ int main(int argc, char *argv[])
      sem_post(shm_sem);
    }
 
-   mq_close(readqueue_fd);
-   mq_unlink(mq_name.c_str());
    handleGameExit(0);
    return 0;
 }
