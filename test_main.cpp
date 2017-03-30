@@ -318,6 +318,15 @@ void refreshMap(int){
     (*gameMap).drawMap();
   }
 }
+
+void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
+  for(int i=0; i<5; i++){
+    if(mbp->player_pids[i] != -1 && i != getPlayerFromMask(thisPlayer) ){ // to other active players only
+      kill(mbp->player_pids[i], signal_enum);
+    }
+  }
+}
+
 void handleGameExit(int){
   // clean ups all game's stuff when exiting forceful or otherwise
   delete gameMap;
@@ -326,7 +335,7 @@ void handleGameExit(int){
   mbp->map[thisPlayerLoc] &= ~thisPlayer;
   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
   sem_post(shm_sem);
-
+  sendSignalToActivePlayers(mbp, SIGUSR1);
   bool isBoardEmpty = isGameBoardEmpty(mbp);
   mq_close(readqueue_fd);
   mq_unlink(mq_name.c_str());
@@ -340,13 +349,6 @@ void handleGameExit(int){
   }
   exit(0);
 
-}
-
-void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
-  for(int i=0; i<5; i++){
-    if(mbp->player_pids[i] != -1)
-      kill(mbp->player_pids[i], signal_enum);
-  }
 }
 
 string itos_utility(int i){
@@ -548,6 +550,7 @@ int main(int argc, char *argv[])
      sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      sem_post(shm_sem);
+     sendSignalToActivePlayers(mbp, SIGUSR1);
      setUpSignalHandlers();
      initializeMsgQueue(thisPlayer);
 
