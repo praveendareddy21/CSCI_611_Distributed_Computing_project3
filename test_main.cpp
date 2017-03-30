@@ -320,7 +320,7 @@ void refreshMap(int){
 void handleGameExit(int){
   // clean ups all game's stuff when exiting forceful or otherwise
   delete gameMap;
-  
+
   sem_wait(shm_sem);
   mbp->map[thisPlayerLoc] &= ~thisPlayer;
   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
@@ -523,7 +523,7 @@ int main(int argc, char *argv[])
          notice = processPlayerMove(mbp, thisPlayerLoc,  thisPlayer, keyInput, thisPlayerFoundGold, thisQuitGameloop);
          sem_post(shm_sem);
          if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
-           sendSignalToActivePlayers(mbp, SIGINT);
+           sendSignalToActivePlayers(mbp, SIGUSR1);
            (*gameMap).postNotice(notice);
            (*gameMap).drawMap();
            sendSignalToActivePlayers(mbp, SIGUSR1);
