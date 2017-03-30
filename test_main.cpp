@@ -384,6 +384,39 @@ void sendMsgBroadcastToPlayers(string msg){
 
 
 }
+void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_prefix){
+  mqd_t writequeue_fd;
+  string msg_queue_name = MSG_QUEUE_PREFIX, msg_queue_suffix, msg_prefix;
+
+  msg_queue_suffix = itos_utility(toPlayerInt);
+  msg_queue_name = msg_queue_name + msg_queue_suffix;
+
+  if (is_msg_prefix){
+    msg_prefix = "Player #" + itos_utility(getPlayerFromMask(thisPlayer)+1) + " says:";
+    msg = msg_prefix + msg;
+  }
+
+
+  if((writequeue_fd=mq_open(msg_queue_name.c_str(), O_WRONLY|O_NONBLOCK))==-1)
+  {
+    perror("Error in mq_send");
+    exit(1);
+  }
+
+  char message_text[251];
+  const char *ptr = msg.c_str();
+  memset(message_text, 0, 251);
+  strncpy(message_text, ptr, 250);
+
+  if(  mq_send(writequeue_fd, message_text, strlen(message_text), 0) == -1)
+  {
+      perror("Error in mq_send");
+      exit(1);
+  }
+  mq_close(writequeue_fd);
+
+}
+
 void receiveMessage(int){
   int err;
   char msg[251]; //a char array for the message
@@ -428,17 +461,6 @@ void setUpSignalHandlers(){
   my_sig_handler.sa_flags=0;
   sigaction(SIGUSR1, &my_sig_handler, NULL);
 
-  /*
-  struct sigaction exit_handler;
-  exit_handler.sa_handler=clean_up;
-  sigemptyset(&exit_handler.sa_mask);
-  exit_handler.sa_flags=0;
-  sigaction(SIGINT, &exit_handler, NULL);
-  */
-
-
-
-
   struct sigaction action_to_take;
   //action_to_take.sa_handler=read_message;
   action_to_take.sa_handler=receiveMessage;
@@ -446,14 +468,6 @@ void setUpSignalHandlers(){
   action_to_take.sa_flags=0;
   sigaction(SIGUSR2, &action_to_take, NULL);
 
-}
-
-void clean_up(int)
-{
-  cerr << "Cleaning up message queue" << endl;
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-  exit(1);
 }
 
 int main(int argc, char *argv[])
