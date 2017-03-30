@@ -49,7 +49,7 @@ struct mapboard{
 
 Map * gameMap = NULL;
 mqd_t readqueue_fd; //message queue file descriptor
-string mq_name; //="/todd_player2_mq";
+string mq_name;
 sem_t* shm_sem;
 mapboard * mbp = NULL;
 int thisPlayer = 0, thisPlayerLoc= 0;
@@ -93,7 +93,6 @@ vector<vector< char > > readMapFromFile(char * mapFile, int &golds){
      mapVector.push_back(temp);
      temp.clear();
   }
-  //cout<<"ve size "<<mapVector.size()<<" col "<<mapVector[0].size()<<endl;;
   return mapVector;
 }
 
@@ -380,10 +379,6 @@ void initializeMsgQueue(int thisPlayer){
 
 }
 
-void cleanUpMsgQueue(int thisPlayer){
-
-}
-
 void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_prefix){
   mqd_t writequeue_fd;
   string msg_queue_name = MSG_QUEUE_PREFIX, msg_queue_suffix, msg_prefix;
@@ -420,11 +415,8 @@ void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_pr
 void sendMsgBroadcastToPlayers(int thisPlayer, string msg){
   for(int i=0; i<5; i++){
     if(mbp->player_pids[i] != -1 && i != getPlayerFromMask(thisPlayer) ){
-      sendMsgToPlayer(thisPlayer, i, msg, true);
-    }
+      sendMsgToPlayer(thisPlayer, i, msg, true);}
   }
-
-return;
 }
 
 void sendWinningMsgBroadcastToPlayers(int thisPlayer){
@@ -432,13 +424,10 @@ void sendWinningMsgBroadcastToPlayers(int thisPlayer){
 
   for(int i=0; i<5; i++){
     if(mbp->player_pids[i] != -1 && i != getPlayerFromMask(thisPlayer) ){
-      sendMsgToPlayer(thisPlayer, i, msg, false);
-
-    }
+      sendMsgToPlayer(thisPlayer, i, msg, false);}
   }
-
-return;
 }
+
 void receiveMessage(int){
   int err;
   char msg[251]; //a char array for the message
@@ -465,8 +454,6 @@ void receiveMessage(int){
   }
 
 }
-
-
 
 void setUpSignalHandlers(){
   struct sigaction exit_action;
@@ -496,13 +483,6 @@ void setUpSignalHandlers(){
 int main(int argc, char *argv[])
 {
 
-
-  //return 0;
-
-
-
-  //############################################## mq end###############################
-
   int rows, cols, goldCount, keyInput = 0, currPlaying = -1;
   bool thisPlayerFoundGold = false , thisQuitGameloop = false;
   char * mapFile = "mymap.txt";
@@ -519,13 +499,11 @@ int main(int argc, char *argv[])
      mapVector = readMapFromFile(mapFile, goldCount);
      rows = mapVector.size();
      cols = mapVector[0].size();
-     cout<<"rows "<<rows<<"cols "<<cols<<endl;
 
      sem_wait(shm_sem);
      mbp = initSharedMemory(rows, cols);
      mbp->rows = rows;
      mbp->cols = cols;
-     //mbp->playing = 0;
      mbp->player_pids[0] = -1; mbp->player_pids[1] = -1;mbp->player_pids[2] = -1;mbp->player_pids[3] = -1;mbp->player_pids[4] = -1;
 
      initGameMap(mbp, mapVector);
@@ -547,9 +525,9 @@ int main(int argc, char *argv[])
 
    try
    {
-     sem_wait(shm_sem);
+     //sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
-     sem_post(shm_sem);
+     //sem_post(shm_sem);
      sendSignalToActivePlayers(mbp, SIGUSR1);
      setUpSignalHandlers();
      initializeMsgQueue(thisPlayer);
@@ -600,7 +578,7 @@ int main(int argc, char *argv[])
    {
      cout<<"runtime_error!!  Window size not large enough"<<endl;
      cout<<"Exiting gracefully"<<endl;
-     sem_post(shm_sem);
+     //sem_post(shm_sem);
    }
 
    handleGameExit(0);
