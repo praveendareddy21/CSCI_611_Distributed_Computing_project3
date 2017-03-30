@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <errno.h>
 #include <cstdlib>
+#include <sstream>
 
 using namespace std;
 
@@ -48,7 +49,7 @@ struct mapboard{
 
 Map * gameMap = NULL;
 mqd_t readqueue_fd; //message queue file descriptor
-string mq_name="/todd_player2_mq";
+string mq_name; //="/todd_player2_mq";
 sem_t* shm_sem;
 mapboard * mbp = NULL;
 int thisPlayer = 0, thisPlayerLoc= 0;
@@ -320,7 +321,7 @@ void refreshMap(int){
 void handleGameExit(int){
   // clean ups all game's stuff when exiting forceful or otherwise
   delete gameMap;
-  
+
   sem_wait(shm_sem);
   mbp->map[thisPlayerLoc] &= ~thisPlayer;
   mbp->player_pids[getPlayerFromMask(thisPlayer)] = -1;
@@ -348,7 +349,15 @@ void sendSignalToActivePlayers(mapboard * mbp, int signal_enum){
   }
 }
 
+string itos_utility(int i){
+  std::stringstream out;
+  out << i;
+  return out.str();
+}
+
 void initializeMsgQueue(int thisPlayer){
+  mq_name = MSG_QUEUE_PREFIX;
+  mq_name = mq_name + itos_utility(getPlayerFromMask(thisPlayer));
   struct mq_attr mq_attributes;
   mq_attributes.mq_flags=0;
   mq_attributes.mq_maxmsg=10;
@@ -373,16 +382,60 @@ void cleanUpMsgQueue(int thisPlayer){
 
 }
 
-void sendMsgToPlayer(int thisPlayer, string msg){
+void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_prefix){
+  mqd_t writequeue_fd;
+  string msg_queue_name = MSG_QUEUE_PREFIX, msg_queue_suffix, msg_prefix;
+
+  msg_queue_suffix = itos_utility(toPlayerInt);
+  msg_queue_name = msg_queue_name + msg_queue_suffix;
+
+  if (is_msg_prefix){
+    msg_prefix = "Player #" + itos_utility(getPlayerFromMask(thisPlayer)+1) + " says:";
+    msg = msg_prefix + msg;
+  }
 
 
+  if((writequeue_fd=mq_open(msg_queue_name.c_str(), O_WRONLY|O_NONBLOCK))==-1)
+  {
+    perror("Error in mq_send");
+    exit(1);
+  }
+
+  char message_text[251];
+  const char *ptr = msg.c_str();
+  memset(message_text, 0, 251);
+  strncpy(message_text, ptr, 250);
+
+  if(  mq_send(writequeue_fd, message_text, strlen(message_text), 0) == -1)
+  {
+      perror("Error in mq_send");
+      exit(1);
+  }
+  mq_close(writequeue_fd);
 
 }
 
-void sendMsgBroadcastToPlayers(string msg){
+void sendMsgBroadcastToPlayers(int thisPlayer, string msg){
+  for(int i=0; i<5; i++){
+    if(mbp->player_pids[i] != -1 && i != getPlayerFromMask(thisPlayer) ){
+      sendMsgToPlayer(thisPlayer, i, msg, true);
+    }
+  }
 
+return;
+}
 
+void sendWinningMsgBroadcastToPlayers(int thisPlayer){
+  string msg = "Player #" + itos_utility(getPlayerFromMask(thisPlayer)) + " won!";
 
+  for(int i=0; i<5; i++){
+    if(mbp->player_pids[i] != -1 && i != getPlayerFromMask(thisPlayer) ){
+      sendMsgToPlayer(thisPlayer, i, msg, false);
+
+    }
+  }
+
+return;
 }
 void receiveMessage(int){
   int err;
@@ -428,17 +481,6 @@ void setUpSignalHandlers(){
   my_sig_handler.sa_flags=0;
   sigaction(SIGUSR1, &my_sig_handler, NULL);
 
-  /*
-  struct sigaction exit_handler;
-  exit_handler.sa_handler=clean_up;
-  sigemptyset(&exit_handler.sa_mask);
-  exit_handler.sa_flags=0;
-  sigaction(SIGINT, &exit_handler, NULL);
-  */
-
-
-
-
   struct sigaction action_to_take;
   //action_to_take.sa_handler=read_message;
   action_to_take.sa_handler=receiveMessage;
@@ -448,18 +490,12 @@ void setUpSignalHandlers(){
 
 }
 
-void clean_up(int)
-{
-  cerr << "Cleaning up message queue" << endl;
-  mq_close(readqueue_fd);
-  mq_unlink(mq_name.c_str());
-  exit(1);
-}
 
 int main(int argc, char *argv[])
 {
 
 
+  //return 0;
 
 
 
@@ -481,7 +517,7 @@ int main(int argc, char *argv[])
      mapVector = readMapFromFile(mapFile, goldCount);
      rows = mapVector.size();
      cols = mapVector[0].size();
-     //cout<<"rows "<<rows<<"cols "<<cols<<endl;
+     cout<<"rows "<<rows<<"cols "<<cols<<endl;
 
      sem_wait(shm_sem);
      mbp = initSharedMemory(rows, cols);
@@ -507,13 +543,13 @@ int main(int argc, char *argv[])
      sem_post(shm_sem);
    }
 
-
    try
    {
      sem_wait(shm_sem);
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      sem_post(shm_sem);
      setUpSignalHandlers();
+     initializeMsgQueue(thisPlayer);
 
      while(keyInput != 81){ // game loop  key Q
        keyInput =  (*gameMap).getKey();
@@ -522,12 +558,19 @@ int main(int argc, char *argv[])
        { sem_wait(shm_sem);
          notice = processPlayerMove(mbp, thisPlayerLoc,  thisPlayer, keyInput, thisPlayerFoundGold, thisQuitGameloop);
          sem_post(shm_sem);
-         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE || notice == YOU_WON_MESSAGE){
-           sendSignalToActivePlayers(mbp, SIGINT);
+         if(notice == FAKE_GOLD_MESSAGE || notice == REAL_GOLD_MESSAGE ){
+           sendSignalToActivePlayers(mbp, SIGUSR1);
            (*gameMap).postNotice(notice);
            (*gameMap).drawMap();
+         }
+         else if(notice == YOU_WON_MESSAGE ){
            sendSignalToActivePlayers(mbp, SIGUSR1);
-         }else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
+           // broadcast winning msg
+           sendWinningMsgBroadcastToPlayers(thisPlayer);
+           (*gameMap).postNotice(notice);
+           (*gameMap).drawMap();
+         }
+         else if(notice == EMPTY_MESSAGE_PLAYER_MOVED ){
            sendSignalToActivePlayers(mbp, SIGUSR1);
            (*gameMap).drawMap();
          }
@@ -537,8 +580,18 @@ int main(int argc, char *argv[])
           break;
 
        }
+       else if(keyInput == 109){ // key m for message
+         int toPlayerInt = getPlayerFromMask((*gameMap).getPlayer(getActivePlayersMask()) );
+         string msg = (*gameMap).getMessage();
+         sendMsgToPlayer(thisPlayer, toPlayerInt, msg, true);
+       }
+       else if(keyInput == 98){ // key b for broadcast
+         string msg = (*gameMap).getMessage();
+         sendMsgBroadcastToPlayers(thisPlayer, msg);
+       }
 
-     }
+
+     }// while looop ending
    }
    catch (const runtime_error& error)
    {
