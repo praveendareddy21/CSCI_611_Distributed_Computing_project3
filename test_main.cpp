@@ -367,8 +367,9 @@ void initializeMsgQueue(int thisPlayer){
   if((readqueue_fd=mq_open(mq_name.c_str(), O_RDONLY|O_CREAT|O_EXCL|O_NONBLOCK,
           S_IRUSR|S_IWUSR, &mq_attributes))==-1)
   {
+
     perror("mq_open");
-    exit(1);
+    handleGameExit(0);
   }
   //set up message queue to receive signal whenever message comes in
   struct sigevent mq_notification_event;
@@ -394,8 +395,9 @@ void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_pr
 
   if((writequeue_fd=mq_open(msg_queue_name.c_str(), O_WRONLY|O_NONBLOCK))==-1)
   {
+    
     perror("Error in mq_send");
-    exit(1);
+    handleGameExit(0);
   }
 
   char message_text[251];
@@ -406,7 +408,7 @@ void sendMsgToPlayer(int thisPlayer, int toPlayerInt, string msg, bool is_msg_pr
   if(  mq_send(writequeue_fd, message_text, strlen(message_text), 0) == -1)
   {
       perror("Error in mq_send");
-      exit(1);
+      handleGameExit(0);
   }
   mq_close(writequeue_fd);
 
@@ -529,8 +531,9 @@ int main(int argc, char *argv[])
      gameMap = new Map(reinterpret_cast<const unsigned char*>(mbp->map),rows,cols);
      //sem_post(shm_sem);
      sendSignalToActivePlayers(mbp, SIGUSR1);
-     setUpSignalHandlers();
      initializeMsgQueue(thisPlayer);
+     setUpSignalHandlers();
+
 
      while(keyInput != 81){ // game loop  key Q
        keyInput =  (*gameMap).getKey();
